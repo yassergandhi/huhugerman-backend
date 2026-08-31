@@ -2,7 +2,7 @@
 
 **Identity resolution engine for the huhuGERMAN platform.**
 
-A production backend serving 30–40 students per trimester at UAM Azcapotzalco — operational since 2011 in its original GAS implementation, migrated to Supabase when AI feedback integration required POST endpoints.
+An identity-resolution design for the huhuGERMAN platform's Google Apps Script pipeline, reportedly in use at UAM Azcapotzalco since 2011 — that specific claim isn't verifiable from this repo. See [huhugerman-instrument](https://github.com/yassergandhi/huhugerman-instrument) for the actual production pipeline.
 
 Built to solve a problem that authentication systems don't solve: *the same student arriving through different identifiers across platforms.*
 
@@ -46,9 +46,9 @@ The real problem is **correlation without custody.** The system needs to recogni
 
 > "The fingerprint is not a security mechanism. It is a correlation tool."
 
-**Decision:** Normalized email → SHA-256 → stored alongside UUID. When a new submission arrives with a known fingerprint but different surface email (capitalization, alias), the system matches to the existing student record rather than creating a duplicate.
+**Decision:** Email, matrícula, and normalized full name — concatenated → SHA-256 — stored alongside UUID. When a new submission arrives with a known fingerprint but different surface email (capitalization, alias), the system matches to the existing student record rather than creating a duplicate.
 
-**Rationale:** Email addresses vary in capitalization and domain aliases. `García` vs `Garcia`. `gmail.com` vs `gamil.com` (typo). The fingerprint is deterministic — the same normalized email always produces the same hash.
+**Rationale:** Email addresses vary in capitalization and domain aliases. `García` vs `Garcia`. `gmail.com` vs `gamil.com` (typo). The fingerprint is deterministic — the same email, matrícula, and name always produce the same hash.
 
 ### ADR-004: Flags Instead of Blocks
 
@@ -77,8 +77,9 @@ Each layer serves a different purpose:
 
 ## Normalization Logic
 
-Before identity resolution, all inputs pass through normalization:
+Before identity resolution, all inputs pass through normalization. The interface below is illustrative pseudocode — there are no `.ts` files in this repo; the real logic lives in `scripts/identity-normalization.gs`.
 ```typescript
+// Illustrative only — not real code in this repo.
 interface NormalizationStep {
   input: string;
   step: string;
@@ -89,44 +90,24 @@ interface NormalizationStep {
 // Example normalization pipeline:
 // [INFO]     Input: "ana.garcia@GMAIL.COM"
 // [AUTO-FIX] Lowercase: "ana.garcia@gmail.com"
-// [INFO]     Fingerprint: "sha256(ana.garcia@gmail.com)"
+// [INFO]     Fingerprint: sha256(email|matrícula|nombre)
 // [WARN]     Matrícula missing — flagged for instructor review
 ```
 
 Normalization rules:
 
 - **Spanish capitalization:** Preserve accents (`García` not `Garcia`)
-- **Domain correction heuristics:** `gamil.com → gmail.com`, `hotnail.com → hotmail.com`
+- **Domain correction heuristics:** `gamil.com → gmail.com`, `hotml.com → hotmail.com`
 - **Matrícula validation:** Numeric strings only, or `EXTERNO` for non-institutional students
 - **Semantic logging:** Each correction is logged with level (`INFO`, `WARN`, `AUTO-FIX`)
 
 ---
 
-## Migration: Google Apps Script → Supabase
+## Google Apps Script → Supabase: A Documented Plan, Not a Migration
 
-The system began as a pure Google Apps Script solution against Google Sheets. It worked reliably for 6+ years. The migration to Supabase PostgreSQL was triggered by a single constraint: **the AI feedback integration required POST endpoints**, which GAS cannot serve reliably at production latency.
+The identity resolution logic — the four ADRs above — is real and implemented, in Google Apps Script (`scripts/identity-normalization.gs`). A move to Supabase PostgreSQL was designed on the reasoning that AI feedback integration would need POST endpoints GAS can't serve reliably, but it was never built: there is no Supabase code in this repo, or in any other huhuGERMAN repo audited so far — no POST endpoints, no Edge Functions, no JSONB tables.
 
-| Capability | Google Apps Script | Supabase PostgreSQL |
-|---|---|---|
-| Identity resolution | ✅ Full implementation | ✅ Migrated |
-| Normalization pipeline | ✅ In-script | ✅ Edge functions |
-| POST endpoints | ❌ Unreliable latency | ✅ Native, <200ms |
-| AI feedback persistence | ❌ Blocked (no JSONB) | ✅ JSONB columns |
-| Cost at current scale | Free | Free tier sufficient |
-| Audit trail | ✅ Google Sheets | ✅ PostgreSQL logs |
-
-**Why the migration succeeded:** The identity resolution logic was already proven across multiple trimesters. The migration was not about redesigning the system — it was about moving proven logic to infrastructure that could support POST endpoints.
-
----
-
-## Production Metrics: Before and After
-
-| Metric | Before | After |
-|--------|--------|-------|
-| Identity lockouts/week | 12 | 0 |
-| Manual support tickets/week | 8 | 2 |
-| Data inconsistency rate | ~15% | <1% |
-| Average resolution time | 24–48h | <5min (auto) or flagged |
+The identity system that actually runs in production is the Apps Script pipeline. See [huhugerman-instrument](https://github.com/yassergandhi/huhugerman-instrument) for that pipeline in its current, deployed form.
 
 ---
 
@@ -142,7 +123,7 @@ A developer builds a database. A learning systems architect builds a system that
 
 **Normalization as pedagogy:** Semantic logging of corrections (`[INFO]`, `[WARN]`, `[AUTO-FIX]`) is not just for debugging. It documents the system's reasoning. An instructor reviewing the logs can understand why a submission was matched to a particular student record.
 
-**Proven logic, proven infrastructure:** The identity resolution logic worked for 6+ years on Google Apps Script. The migration to Supabase was not a rewrite — it was moving proven logic to infrastructure that could support new features. This is the difference between technical debt and technical evolution.
+**Proven logic, still in Apps Script:** The identity resolution logic in these ADRs has run in Google Apps Script, not in a rewritten Supabase backend — see [huhugerman-instrument](https://github.com/yassergandhi/huhugerman-instrument) for the deployed pipeline.
 
 ---
 
@@ -150,10 +131,9 @@ A developer builds a database. A learning systems architect builds a system that
 
 | Category | Technologies |
 |----------|---------------|
-| **Backend** | Supabase · PostgreSQL |
-| **Scripting** | Google Apps Script (legacy) · TypeScript (current) |
+| **Deployed** | Google Apps Script |
 | **Identity** | SHA-256 · UUID v4 |
-| **Infrastructure** | Supabase Edge Functions |
+| **Planned, not implemented** | Supabase · PostgreSQL · Edge Functions · TypeScript |
 | **Patterns** | Domain-Driven Design · Audit logging · Semantic normalization |
 
 ---
@@ -163,7 +143,8 @@ A developer builds a database. A learning systems architect builds a system that
 → **[huhugerman.com](https://huhugerman.com)** — Production system (input auténtico desde A1 · 2011→)  
 → **[huhugerman-frontend](https://github.com/yassergandhi/huhugerman-frontend)** — Student portal (Astro + DeepSeek AI)  
 → **[huhugerman-mvp-notes](https://github.com/yassergandhi/huhugerman-mvp-notes)** — PRD, MVP contract, type definitions  
-→ **[resilient-api-integration-demo](https://github.com/yassergandhi/resilient-api-integration-demo)** — Chaos engineering diagnostic
+→ **[resilient-api-integration-demo](https://github.com/yassergandhi/resilient-api-integration-demo)** — Chaos engineering diagnostic  
+→ **[huhugerman-instrument](https://github.com/yassergandhi/huhugerman-instrument)** — Production Apps Script pipeline that implements this identity system today
 
 ---
 
@@ -171,9 +152,9 @@ A developer builds a database. A learning systems architect builds a system that
 
 **Yasser Gandhi Hernández Esquivel**
 
-Learning Systems Architect · Germanista C1 · Senior Developer
+Profesor-investigador de alemán · Desarrollador web (Lic. UdeG) · Fundador de huhuGERMAN
 
-Lic. Letras Alemanas UNAM (2012) · MEd Pedagogía UNAM (2020) · Lic. Desarrollo de Sistemas Web UdeG (2025, GPA 98.5) · C1 Hochschule Offenburg (2019) · 11 Scopus peer-review contributions
+Lic. Letras Alemanas UNAM (2012) · MEd Pedagogía UNAM (2020) · Lic. Desarrollo de Sistemas Web UdeG (2025, GPA 98.5) · C1 Hochschule Offenburg (2019)
 
 This backend is the manifestation of a core principle: systems are built for the constraints they operate under. The constraint here is that students are human — they use multiple devices, make typos, change email addresses mid-semester. The system recognizes this and adapts. It doesn't require students to be perfect; it recognizes them despite imperfection.
 
